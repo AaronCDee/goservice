@@ -1,58 +1,72 @@
 package goservice
 
-type GoServiceAction interface {
-	Execute(values map[string]any) (GoServiceContext, error) // makes a context and calls executed with said context.
+type Actionable interface {
+	Execute(values map[string]any) *Context
 
-	rollback(ctx GoServiceContext)
+	executed(ctx *Context)
 
-	executed(ctx GoServiceContext)
+	rolledBack(ctx *Context)
 
-	rolledBack(ctx GoServiceContext)
+	validateExpectationsInCtx(ctx *Context) error
 
-	validateExpectationsInCtx(ctx GoServiceContext)
-
-	validatePromisesInCtx(ctx GoServiceContext)
+	validatePromisesInCtx(ctx *Context) error
+	
+	expects() []string
+	
+	promises() []string
 }
 
 type Action struct {
+	Actionable
+
 	hasExecuted bool
-	Expects 	[]string
-	Promises 	[]string
 }
 
 func (act Action) validatePromisesInCtx(ctx *Context) error {
-	return validateInCtx(ctx, act.Promises, "promises")
+	return validateInCtx(ctx, act.Actionable.promises(), "promises")
 }
 
 func (act Action) validateExpectationsInCtx(ctx *Context) error {
-	return validateInCtx(ctx, act.Expects, "expectations")
+	return validateInCtx(ctx, act.Actionable.expects(), "expectations")
 }
 
 
-func (act *Action) Execute(values map[string]any) (GoServiceContext, error) {
+func (act *Action) Execute(values map[string]any) *Context {
 	ctx := &Context{Values: values}
 	
-	err := act.validateExpectationsInCtx(ctx)
+	err := act.Actionable.validateExpectationsInCtx(ctx)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	
-	act.executed(ctx)
-	
+
+	act.Actionable.executed(ctx)
+
 	if ctx.ShouldRollback {
-		act.rolledBack(ctx)
+		act.Actionable.rolledBack(ctx)
 	}
 	
-	err = act.validatePromisesInCtx(ctx)
+	err = act.Actionable.validatePromisesInCtx(ctx)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 	
 	act.hasExecuted = true
+
+	if(!ctx.Failure && !ctx.Success) {
+		ctx.Succeed("")
+	}
 	
-	return ctx, nil
+	return ctx
 }
 
 func (Action) executed(ctx *Context) {}
 
 func (Action) rolledBack(ctx *Context) {}
+
+func (Action) expects() []string {
+	return []string{}
+}
+
+func (Action) promises() []string {
+	return []string{}
+}
